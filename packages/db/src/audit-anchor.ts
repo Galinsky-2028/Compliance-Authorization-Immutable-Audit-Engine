@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { AuditEvent } from "@caiae/core";
-import { canonicalJson, verifyAuditChain } from "./audit.js";
+import { canonicalJson, hashAuditEvent } from "./audit.js";
 
 export type AuditChainHead = {
   organizationId: string;
@@ -54,17 +54,34 @@ function mapEvent(row: Record<string, any>): AuditEvent {
   };
 }
 
-async function verifyPrefix(client: PoolClient, head: AuditChainHead): Promise<boolean> {
-  const result = await client.query(
-    "SELECT * FROM audit_events " +
-    "WHERE organization_id = $1 AND aggregate_type = $2 AND aggregate_id = $3 " +
-    "AND sequence_number <= $4 ORDER BY sequence_number ASC",
-    [head.organizationId, head.aggregateType, head.aggregateId, head.sequenceNumber],
-  );
-  const events = result.rows.map(mapEvent);
-  if (events.length !== head.sequenceNumber) return false;
-  const verification = verifyAuditChain(events);
-  return verification.valid && events.at(-1)?.eventHash === head.eventHash;
+// Bound fetched rows per chain page, not payload bytes or the number of chains.
+const AUDIT_PREFIX_PAGE_SIZE = 256;
+
+async function verifyPrefix(client: Pick<PoolClient, "query">, head: AuditChainHead): Promise<boolean> {
+  if (!Number.isSafeInteger(head.sequenceNumber) || head.sequenceNumber < 1) return false;
+  let checked = 0;
+  let previousHash: string | null = null;
+  while (checked < head.sequenceNumber) {
+    const result = await client.query(
+      "SELECT * FROM audit_events " +
+      "WHERE organization_id = $1 AND aggregate_type = $2 AND aggregate_id = $3 " +
+      "AND sequence_number > $4 AND sequence_number <= $5 " +
+      "ORDER BY sequence_number ASC LIMIT $6",
+      [head.organizationId, head.aggregateType, head.aggregateId, checked,
+        head.sequenceNumber, AUDIT_PREFIX_PAGE_SIZE],
+    );
+    if (result.rows.length === 0 || result.rows.length > AUDIT_PREFIX_PAGE_SIZE) return false;
+    for (const row of result.rows) {
+      const event = mapEvent(row);
+      if (event.sequenceNumber !== checked + 1 || event.sequenceNumber > head.sequenceNumber ||
+          event.previousEventHash !== previousHash) return false;
+      const { eventHash, ...withoutHash } = event;
+      if (hashAuditEvent(withoutHash) !== eventHash) return false;
+      checked++;
+      previousHash = eventHash;
+    }
+  }
+  return previousHash === head.eventHash;
 }
 
 function parseHead(row: Record<string, any>): AuditChainHead {
@@ -81,26 +98,34 @@ export async function collectAuditCheckpoint(pool: Pool): Promise<AuditCheckpoin
   const client = await pool.connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    const rows = await client.query(
-      "SELECT DISTINCT ON (organization_id, aggregate_type, aggregate_id) " +
-      "organization_id, aggregate_type, aggregate_id, sequence_number, event_hash " +
-      "FROM audit_events " +
-      "ORDER BY organization_id, aggregate_type, aggregate_id, sequence_number DESC",
-    );
-    const chainHeads = rows.rows.map(parseHead);
-    for (const head of chainHeads) {
-      if (!(await verifyPrefix(client, head))) {
-        throw new Error("Audit chain integrity check failed before checkpoint signing");
-      }
-    }
+    const checkpoint = await collectAuditCheckpointWithClient(client);
     await client.query("COMMIT");
-    return { schemaVersion: 1, createdAt: new Date().toISOString(), chainHeads };
+    return checkpoint;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
   }
+}
+
+/** SELECT-only composition helper; caller owns the read-only snapshot/transaction. */
+export async function collectAuditCheckpointWithClient(
+  client: Pick<PoolClient, "query">,
+): Promise<AuditCheckpoint> {
+  const rows = await client.query(
+    "SELECT DISTINCT ON (organization_id, aggregate_type, aggregate_id) " +
+    "organization_id, aggregate_type, aggregate_id, sequence_number, event_hash " +
+    "FROM audit_events " +
+    "ORDER BY organization_id, aggregate_type, aggregate_id, sequence_number DESC",
+  );
+  const chainHeads = rows.rows.map(parseHead);
+  for (const head of chainHeads) {
+    if (!(await verifyPrefix(client, head))) {
+      throw new Error("Audit chain integrity check failed before checkpoint signing");
+    }
+  }
+  return { schemaVersion: 1, createdAt: new Date().toISOString(), chainHeads };
 }
 
 function isValidCheckpoint(value: any): value is SignedAuditCheckpoint {
@@ -172,16 +197,9 @@ export async function verifyAuditCheckpointAgainstDatabase(
   const client = await pool.connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    let checkedChains = 0;
-    for (const head of signed.checkpoint.chainHeads) {
-      if (!(await verifyPrefix(client, head))) {
-        await client.query("COMMIT");
-        return { valid: false, checkedChains, reason: "missing_or_modified_chain" };
-      }
-      checkedChains++;
-    }
+    const result = await verifyAuditCheckpointAgainstDatabaseWithClient(client, signed, publicKeyPem);
     await client.query("COMMIT");
-    return { valid: true, checkedChains };
+    return result;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -189,3 +207,24 @@ export async function verifyAuditCheckpointAgainstDatabase(
     client.release();
   }
 }
+
+/** SELECT-only composition helper; does not acquire/release or commit the caller's client. */
+export async function verifyAuditCheckpointAgainstDatabaseWithClient(
+  client: Pick<PoolClient, "query">,
+  signed: unknown,
+  publicKeyPem: string,
+): Promise<CheckpointVerification> {
+  if (!verifyAuditCheckpointSignature(signed, publicKeyPem)) {
+    return { valid: false, checkedChains: 0, reason: "invalid_signature" };
+  }
+  let checkedChains = 0;
+  for (const head of signed.checkpoint.chainHeads) {
+    if (!(await verifyPrefix(client, head))) {
+      return { valid: false, checkedChains, reason: "missing_or_modified_chain" };
+    }
+    checkedChains++;
+  }
+  return { valid: true, checkedChains };
+}
+
+
