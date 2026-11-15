@@ -17,6 +17,8 @@ import {
   type IssueOperatorCredentialInput,
   type OperatorCredential,
   type PrincipalRoleAssignment,
+  type ProvisionDigestCredentialInput,
+  type ProvisionedDigestCredential,
   type RevokeOperatorCredentialInput,
   type SecurityRole,
   type SecurityServiceOptions,
@@ -366,6 +368,164 @@ export class SecurityService {
 
       await client.query("COMMIT");
       return issued;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw normalizeError(error);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Trusted-operator provisioning for a credential whose plaintext never
+   * reaches this process. Callers must already hold direct database access
+   * (the same trust boundary as tenant provisioning); this is not exposed over
+   * HTTP. The principal receives the organization administrator role.
+   * Re-running with the same digest for the same principal is idempotent.
+   */
+  async provisionDigestCredential(
+    input: ProvisionDigestCredentialInput,
+  ): Promise<ProvisionedDigestCredential> {
+    const organizationId = requiredUuid(
+      input.organizationId,
+      "organizationId",
+    );
+    const principalId = requiredUuid(
+      input.principalId,
+      "principalId",
+    );
+    if (
+      typeof input.tokenPrefix !== "string" ||
+      !/^[a-f0-9]{10}$/.test(input.tokenPrefix)
+    ) {
+      throw new SecurityError(
+        "validation",
+        "tokenPrefix must be 10 lowercase hexadecimal characters",
+      );
+    }
+    if (
+      typeof input.tokenSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/.test(input.tokenSha256)
+    ) {
+      throw new SecurityError(
+        "validation",
+        "tokenSha256 must be a lowercase hexadecimal SHA-256 digest",
+      );
+    }
+    const name = requiredString(
+      input.credentialName,
+      "credentialName",
+    );
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      await assertActiveUserPrincipal(
+        client,
+        organizationId,
+        principalId,
+      );
+
+      const existing = await client.query(
+        `SELECT *
+         FROM operator_credentials
+         WHERE token_hash = $1
+            OR (organization_id = $2 AND name = $3)
+         FOR UPDATE`,
+        [input.tokenSha256, organizationId, name],
+      );
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        if (
+          existing.rows.length !== 1 ||
+          row.token_hash !== input.tokenSha256 ||
+          row.organization_id !== organizationId ||
+          row.principal_id !== principalId ||
+          row.name !== name ||
+          row.status !== "active"
+        ) {
+          throw new SecurityError(
+            "conflict",
+            "a different or inactive credential already uses this digest or name",
+          );
+        }
+        await client.query("COMMIT");
+        return {
+          credential: mapCredential(row),
+          created: false,
+        };
+      }
+
+      const roleId = await ensureAdministratorRole(
+        client,
+        organizationId,
+      );
+      await ensureRoleAssignment(
+        client,
+        organizationId,
+        principalId,
+        roleId,
+        null,
+      );
+
+      const id = randomUUID();
+      await client.query(
+        `INSERT INTO operator_credentials(
+           id,
+           organization_id,
+           principal_id,
+           name,
+           token_prefix,
+           token_hash,
+           status,
+           expires_at,
+           created_by_principal_id,
+           metadata
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6,
+           'active', NULL, NULL, $7::jsonb
+         )`,
+        [
+          id,
+          organizationId,
+          principalId,
+          name,
+          input.tokenPrefix,
+          input.tokenSha256,
+          JSON.stringify({ source: "digest-provisioning" }),
+        ],
+      );
+
+      await appendAuditEventWithClient(
+        client,
+        {
+          organizationId,
+          aggregateType: "principal",
+          aggregateId: principalId,
+          eventType: "security.digest_credential_provisioned",
+          actorPrincipalId: null,
+          occurredAt:
+            this.now().toISOString(),
+          payload: {
+            roleId,
+            credentialId: id,
+          },
+        },
+      );
+
+      const row = (
+        await client.query(
+          `SELECT *
+           FROM operator_credentials
+           WHERE id = $1`,
+          [id],
+        )
+      ).rows[0];
+      await client.query("COMMIT");
+      return {
+        credential: mapCredential(row),
+        created: true,
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw normalizeError(error);

@@ -1,0 +1,53 @@
+# Free-plan demonstration topology. No paid plans and no background worker:
+# caiae-api runs the API and the sweep worker in one web service
+# (scripts/start-free-plan.mjs). See docs/render-free-plan-deployment.md.
+# The paid three-service example remains in deploy/render.blueprint.example.yaml.
+services:
+  - type: web
+    name: caiae-api
+    runtime: node
+    plan: free
+    region: ohio
+    repo: https://github.com/Galinsky-2028/Compliance-Authorization-Immutable-Audit-Engine
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run build
+    startCommand: node scripts/start-free-plan.mjs
+    healthCheckPath: /ready
+    envVars:
+      - key: NODE_VERSION
+        value: 24.21.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CAIAE_CORS_ORIGINS
+        value: none
+      - key: CAIAE_WEBHOOK_MASTER_SECRET
+        generateValue: true
+      - key: CAIAE_DEMO_TENANTS
+        sync: false
+      - key: CAIAE_DEMO_TENANTS_CONFIRM
+        sync: false
+
+  - type: web
+    name: caiae-admin
+    runtime: node
+    plan: free
+    region: ohio
+    repo: https://github.com/Galinsky-2028/Compliance-Authorization-Immutable-Audit-Engine
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start -w @caiae/web
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 24.21.0
+      - key: NODE_ENV
+        value: production
+      - key: CAIAE_API_BASE_URL
+        fromService:
+          type: web
+          name: caiae-api
+          envVarKey: RENDER_EXTERNAL_URL

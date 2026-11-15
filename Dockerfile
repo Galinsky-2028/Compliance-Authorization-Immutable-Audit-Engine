@@ -6,7 +6,7 @@ ARG CAIAE_API_BASE_URL=http://localhost:4000
 ENV CAIAE_API_BASE_URL=$CAIAE_API_BASE_URL
 
 COPY . .
-RUN npm install
+RUN npm ci
 RUN npm run build
 
 FROM node:24.21.0-bookworm-slim AS api

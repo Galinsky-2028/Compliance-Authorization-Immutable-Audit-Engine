@@ -14,7 +14,7 @@ Required private environment values:
 
 Then run:
 
-    npm install
+    npm ci
     npm run build
     node scripts/bootstrap-tenant.mjs
 

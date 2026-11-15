@@ -82,6 +82,23 @@ export type BootstrapInput = {
   credentialName?: string;
 };
 
+/**
+ * Registers an operator credential whose plaintext was generated and stored
+ * elsewhere. Only the SHA-256 digest and display prefix reach this service.
+ */
+export type ProvisionDigestCredentialInput = {
+  organizationId: string;
+  principalId: string;
+  tokenPrefix: string;
+  tokenSha256: string;
+  credentialName: string;
+};
+
+export type ProvisionedDigestCredential = {
+  credential: OperatorCredential;
+  created: boolean;
+};
+
 export type CreateRoleInput = {
   organizationId: string;
   key: string;
