@@ -1,6 +1,6 @@
 # Render deployment topology (PR 36)
 
-The deploy/render.blueprint.example.yaml file is **an example, not an active Blueprint**. It is intentionally not stored at repository root as render.yaml, to prevent accidental billable service provisioning while the intended Render workspace and spending approval remain unresolved.
+The deploy/render.blueprint.example.yaml file is **an example, not an active Blueprint**: it describes paid starter services and must not be applied without spending approval. The root render.yaml describes only the free-plan demonstration topology in [render-free-plan-deployment.md](render-free-plan-deployment.md).
 
 The example defines three services: paid API web service, one active background worker, and paid Next.js admin web service. The API uses a one-shot migration pre-deploy hook with the direct Neon PostgreSQL connection. Normal API and worker database traffic use the pooled Neon connection. The API checks /ready and the worker intentionally has exactly one active replica. Build and deploy are gated on successful GitHub checks.
 

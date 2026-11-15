@@ -8,7 +8,7 @@ services:
     region: ohio
     plan: starter
     autoDeployTrigger: checksPass
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     preDeployCommand: DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:migrate
     startCommand: npm run start -w @caiae/api
     healthCheckPath: /ready
@@ -29,7 +29,7 @@ services:
     region: ohio
     plan: starter
     autoDeployTrigger: checksPass
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm run start -w @caiae/worker
     envVars:
       - fromGroup: caiae-runtime
@@ -42,7 +42,7 @@ services:
     region: ohio
     plan: starter
     autoDeployTrigger: checksPass
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm run start -w @caiae/web
     healthCheckPath: /
     envVars:
