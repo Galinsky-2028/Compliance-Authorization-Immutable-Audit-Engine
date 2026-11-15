@@ -35,7 +35,8 @@
       "externalPrerequisites": [],
       "mappingEvidence": "Evidence-bound worker-inclusive monitoring and signed telemetry delivery (PR #49); live accepted-release deployment and acceptance run remain separate.",
       "contributingPrs": [
-        54
+        54,
+        55
       ]
     },
     {
