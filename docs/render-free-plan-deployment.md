@@ -8,6 +8,16 @@ production topology in [render-production-deployment.md](render-production-deplo
 and does not establish production acceptance, SLOs, recovery objectives or
 certification.
 
+## Current demonstration instance
+
+- `caiae-api`: `https://caiae-api.onrender.com` (Render free web service, Ohio).
+- `caiae-admin`: `https://caiae-admin.onrender.com` (Render free web service, Ohio).
+- Database: Neon project **CAIAE** (AWS us-east-2) in the campaign organization.
+- Demonstration tenants: `algorithmic-accountability-demo` and
+  `federal-encryption-compliance-demo`. Their client values are in the Render
+  environment groups `caiae-client-algorithmic-accountability-demo` and
+  `caiae-client-federal-encryption-compliance-demo`.
+
 ## Topology
 
 | Service | Render type | Start | Purpose |
@@ -43,6 +53,13 @@ release and `GET /ready?includeWorker=true` reports full-system readiness.
   files.
 - Neon free-plan compute, storage and restore-window limits apply. Arrange
   logical backups before storing anything other than demonstration data.
+
+## Build
+
+`NODE_ENV=production` is set on the services and is visible during the Render
+build, which would make `npm ci` skip devDependencies (TypeScript and Node
+type definitions). The build command therefore uses
+`npm ci --include=dev && npm run build`.
 
 ## Database
 
