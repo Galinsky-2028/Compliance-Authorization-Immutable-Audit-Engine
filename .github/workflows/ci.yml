@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm install
+      - run: npm ci
       - run: npm run db:migrate
       - run: npm run db:seed
       - run: npm run typecheck
@@ -38,5 +38,6 @@ jobs:
       - run: node --test scripts/engine-room-monitor.test.mjs
       - run: node --test scripts/verify-recovery.test.mjs
       - run: node --test scripts/bootstrap-tenant.test.mjs
+      - run: node --test scripts/provision-demo-tenants.test.mjs scripts/start-free-plan.test.mjs
       - run: npm run rules:evaluate -- examples/rules/baseline-system-security.yaml examples/rules/baseline-system-security.context.json
       - run: npm run build

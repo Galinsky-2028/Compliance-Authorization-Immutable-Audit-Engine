@@ -27,7 +27,7 @@ Requirements: Node.js 24 LTS, npm, Docker.
 ```bash
 cp .env.example .env
 docker compose up -d
-npm install
+npm ci
 npm run typecheck
 npm test
 npm run build
@@ -43,7 +43,7 @@ npm run dev:worker
 
 The API liveness endpoint is `GET http://localhost:4000/health`; database/schema readiness is `GET http://localhost:4000/ready`.
 
-For production deployment, migrations, secrets, backup/restore, graceful shutdown, and rollback procedures, see `docs/production-readiness.md`.
+For production deployment, migrations, secrets, backup/restore, graceful shutdown, and rollback procedures, see `docs/production-readiness.md`. The free-plan demonstration deployment (API and sweep worker in one Render web service, plus the admin UI) is described in `docs/render-free-plan-deployment.md`.
 
 ## Design commitments
 

@@ -15,6 +15,8 @@ export type {
   IssueOperatorCredentialInput,
   OperatorCredential,
   PrincipalRoleAssignment,
+  ProvisionDigestCredentialInput,
+  ProvisionedDigestCredential,
   RevokeOperatorCredentialInput,
   SecurityErrorCode,
   SecurityRole,
