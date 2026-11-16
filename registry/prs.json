@@ -152,10 +152,13 @@
       "id": "CAIAE-012",
       "title": "Performance and release assurance — approved work package 2 of 2",
       "origin": "original",
-      "prs": [],
+      "prs": [
+        52
+      ],
       "dependsOn": [],
       "externalDependencies": [],
-      "externalPrerequisites": []
+      "externalPrerequisites": [],
+      "mappingEvidence": "Bounded synthetic, loopback and release-pinned latency samplers with tests, plus recorded local-only measurements (PR #52). Not production SLO or capacity evidence; representative-deployment benchmarks with agreed thresholds remain follow-up."
     }
   ],
   "pullRequests": [
